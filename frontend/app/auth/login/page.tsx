@@ -1,26 +1,83 @@
 'use client'
 import { useState } from 'react'
-import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { Eye, EyeOff, Loader2 } from 'lucide-react'
+import { Eye, EyeOff, Loader2, XCircle } from 'lucide-react'
+
+function validateEmail(v: string) {
+  if (!v.trim()) return 'Email is required.'
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim())) return 'Enter a valid email address.'
+  return ''
+}
+
+function validatePassword(v: string) {
+  if (!v) return 'Password is required.'
+  return ''
+}
 
 export default function LoginPage() {
-  const router   = useRouter()
-  const supabase = createClient()
+  const router = useRouter()
 
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [showPw,   setShowPw]   = useState(false)
   const [loading,  setLoading]  = useState(false)
-  const [error,    setError]    = useState('')
+  const [apiError, setApiError] = useState('')
+  const [touched,  setTouched]  = useState({ email: false, password: false })
+
+  const errors = {
+    email:    validateEmail(email),
+    password: validatePassword(password),
+  }
+
+  function touch(field: keyof typeof touched) {
+    setTouched(prev => ({ ...prev, [field]: true }))
+  }
 
   async function handleLogin() {
-    if (!email || !password) { setError('Please fill in all fields.'); return }
-    setLoading(true); setError('')
-    const { error: err } = await supabase.auth.signInWithPassword({ email, password })
-    if (err) { setError(err.message); setLoading(false); return }
-    router.push('/dashboard')
+    setTouched({ email: true, password: true })
+    if (errors.email || errors.password) return
+
+    setLoading(true)
+    setApiError('')
+
+    try {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+      if (!supabaseUrl || !supabaseKey) {
+        setApiError('App configuration error — missing environment variables. Contact bidorapk@gmail.com.')
+        setLoading(false)
+        return
+      }
+
+      const { createBrowserClient } = await import('@supabase/ssr')
+      const supabase = createBrowserClient(supabaseUrl, supabaseKey)
+
+      const { error: err } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
+        password,
+      })
+
+      if (err) {
+        if (err.message.includes('Invalid login credentials') || err.message.includes('invalid_credentials')) {
+          setApiError('Incorrect email or password. Please try again.')
+        } else if (err.message.includes('Email not confirmed')) {
+          setApiError('Please confirm your email first — check your inbox for the verification link.')
+        } else if (err.message.includes('rate limit') || err.status === 429) {
+          setApiError('Too many attempts. Please wait a minute and try again.')
+        } else {
+          setApiError(err.message)
+        }
+        setLoading(false)
+        return
+      }
+
+      router.push('/dashboard')
+    } catch (e: any) {
+      setApiError('Unexpected error: ' + (e?.message ?? 'please try again.'))
+      setLoading(false)
+    }
   }
 
   return (
@@ -41,46 +98,66 @@ export default function LoginPage() {
         <h1 className="text-xl font-bold text-slate-100 mb-1">Welcome back</h1>
         <p className="text-sm text-slate-500 mb-6">Sign in to your BIDORA account</p>
 
-        {error && (
-          <div className="mb-4 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-            {error}
+        {apiError && (
+          <div className="mb-5 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20
+                          text-red-400 text-sm flex items-start gap-2">
+            <XCircle size={15} className="flex-shrink-0 mt-0.5" />
+            {apiError}
           </div>
         )}
 
         <div className="space-y-4">
+
+          {/* Email */}
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1.5">Email</label>
             <input
               type="email"
               value={email}
               onChange={e => setEmail(e.target.value)}
-              placeholder="you@company.com"
+              onBlur={() => touch('email')}
               onKeyDown={e => e.key === 'Enter' && handleLogin()}
-              className="w-full bg-[#1a2236] border border-[#1e2d45] rounded-xl px-4 py-2.5
-                         text-sm text-slate-200 placeholder-slate-600 outline-none
-                         focus:border-blue-500/60 transition-colors"
+              placeholder="you@company.com"
+              className={`w-full bg-[#1a2236] border rounded-xl px-4 py-2.5 text-sm
+                          text-slate-200 placeholder-slate-600 outline-none transition-colors
+                          ${touched.email && errors.email
+                            ? 'border-red-500/60'
+                            : 'border-[#1e2d45] focus:border-blue-500/60'}`}
             />
+            {touched.email && errors.email && (
+              <p className="mt-1.5 text-xs text-red-400">{errors.email}</p>
+            )}
           </div>
 
+          {/* Password */}
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1.5">Password</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-slate-400">Password</label>
+            </div>
             <div className="relative">
               <input
                 type={showPw ? 'text' : 'password'}
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                placeholder="••••••••"
+                onBlur={() => touch('password')}
                 onKeyDown={e => e.key === 'Enter' && handleLogin()}
-                className="w-full bg-[#1a2236] border border-[#1e2d45] rounded-xl px-4 py-2.5 pr-10
-                           text-sm text-slate-200 placeholder-slate-600 outline-none
-                           focus:border-blue-500/60 transition-colors"
+                placeholder="Your password"
+                className={`w-full bg-[#1a2236] border rounded-xl px-4 py-2.5 pr-10 text-sm
+                            text-slate-200 placeholder-slate-600 outline-none transition-colors
+                            ${touched.password && errors.password
+                              ? 'border-red-500/60'
+                              : 'border-[#1e2d45] focus:border-blue-500/60'}`}
               />
               <button type="button" onClick={() => setShowPw(!showPw)}
                 className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
                 {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
               </button>
             </div>
+            {touched.password && errors.password && (
+              <p className="mt-1.5 text-xs text-red-400">{errors.password}</p>
+            )}
           </div>
+
         </div>
 
         <button
