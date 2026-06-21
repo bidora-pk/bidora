@@ -24,7 +24,7 @@ export default function RegisterPage() {
 
     const { error: err } = await supabase.auth.signUp({
       email, password,
-      options: { data: { full_name: fullName }, emailRedirectTo: `${window.location.origin}/dashboard`, }
+      options: { data: { full_name: fullName }, emailRedirectTo: 'https://bidorapk.vercel.app/auth/dashboard', }
     })
 
     if (err) { setError(err.message); setLoading(false); return }
