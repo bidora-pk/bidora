@@ -1,0 +1,54 @@
+name: Daily EPADS Pipeline
+
+on:
+  schedule:
+    # Runs at 13:00 UTC (6 PM PKT) every day, matching the original cron setup
+    - cron: '0 13 * * *'
+  workflow_dispatch: # Allows you to click a button in GitHub to run it manually
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        # Uses the dependencies listed in your requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install selenium python-dotenv supabase psycopg2-binary pandas requests python-dateutil
+
+      - name: Install Chromium and ChromeDriver
+        # Installs the browser exactly where your Python scripts expect it
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser chromium-chromedriver
+
+      - name: Run Scrapers and Data Pipeline
+        # Injects your GitHub secrets into the environment for Python to use
+        env:
+          EPADS_EMAIL: ${{ secrets.EPADS_EMAIL }}
+          EPADS_PASSWORD: ${{ secrets.EPADS_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          # Create the data folder so the CSVs have a place to save
+          mkdir -p pipeline/data
+          
+          # Run the sequence exactly as your original run_pipeline.sh did
+          cd pipeline
+          python scrapers/phase1_epads_list.py
+          python scrapers/phase2_epads_details.py
+          python scrapers/phase3_epads_iframes.py
+          python transform_and_load.py
+          python alert_sender.py
