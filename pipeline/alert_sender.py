@@ -1,5 +1,5 @@
 """
-alert_sender.py
+alert_sender.py  —  BIDORA Tender Intelligence
 Reads users + their niches from Supabase.
 Sends email alerts for new niche matches and saved tender deadlines.
 """
@@ -14,7 +14,7 @@ load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY")
-GMAIL_USER   = os.getenv("GMAIL_USER")
+GMAIL_USER   = os.getenv("GMAIL_USER")   # bidorapk@gmail.com
 GMAIL_PASS   = os.getenv("GMAIL_APP_PASSWORD")
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -23,7 +23,7 @@ now = datetime.now(timezone.utc).replace(tzinfo=None)
 def send_email(to_email: str, subject: str, html_body: str):
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"]    = f"EPADS Intelligence <{GMAIL_USER}>"
+    msg["From"]    = f"BIDORA Tender Intelligence <{GMAIL_USER}>"
     msg["To"]      = to_email
     msg.attach(MIMEText(html_body, "html"))
     with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
@@ -61,8 +61,13 @@ def email_wrapper(user_name: str, content: str) -> str:
 <table width="640" cellpadding="0" cellspacing="0" style="background:#111827;border-radius:16px;border:1px solid #1e2d45;overflow:hidden;">
   <tr style="background:linear-gradient(135deg,#1d4ed8,#0ea5e9);">
     <td style="padding:24px 32px;">
-      <span style="font-size:22px;font-weight:700;color:white;letter-spacing:-0.5px;">🏛️ EPADS Intelligence</span>
-      <p style="color:rgba(255,255,255,0.8);margin:4px 0 0;font-size:13px;">Federal Procurement Alerts</p>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div style="width:36px;height:36px;background:rgba(255,255,255,0.2);border-radius:8px;display:inline-flex;align-items:center;justify-content:center;">
+          <span style="font-size:18px;font-weight:900;color:white;font-family:Arial Black;">B</span>
+        </div>
+        <span style="font-size:22px;font-weight:900;color:white;letter-spacing:-0.5px;font-family:Arial Black;">BIDORA</span>
+      </div>
+      <p style="color:rgba(255,255,255,0.8);margin:6px 0 0;font-size:13px;">Pakistan Federal Tender Intelligence</p>
     </td>
   </tr>
   <tr><td style="padding:28px 32px;">
@@ -70,9 +75,9 @@ def email_wrapper(user_name: str, content: str) -> str:
     {content}
     <hr style="border:none;border-top:1px solid #1e2d45;margin:28px 0;">
     <p style="color:#475569;font-size:12px;margin:0;">
-      You're receiving this because you have alert preferences set on EPADS Intelligence.<br>
-      <a href="#" style="color:#3b82f6;">Manage your alerts</a> · 
-      <a href="#" style="color:#3b82f6;">Unsubscribe</a>
+      You're receiving this because you have alert preferences set on BIDORA.<br>
+      <a href="mailto:bidorapk@gmail.com" style="color:#3b82f6;">Contact us</a> ·
+      Questions? Reply to this email.
     </p>
   </td></tr>
 </table>
@@ -80,30 +85,26 @@ def email_wrapper(user_name: str, content: str) -> str:
 </body></html>"""
 
 def run_alerts():
-    print("Fetching all users with niches...")
-    # Get all users who have at least one niche
+    print("BIDORA Alert Sender — fetching users...")
     niche_rows = supabase.table("user_niches").select("user_id, category, keywords").execute().data
     if not niche_rows:
         print("No users with niches found.")
         return
 
-    # Group niches by user
     from collections import defaultdict
     user_niches: dict[str, list] = defaultdict(list)
     for row in niche_rows:
         user_niches[row["user_id"]].append(row)
 
-    # Get profiles (for name + email)
     profile_rows = supabase.table("profiles").select("id, full_name, company_name").execute().data
     profiles = {p["id"]: p for p in profile_rows}
 
-    # Get user emails from auth.users via service role
     auth_users = supabase.auth.admin.list_users()
     email_map = {u.id: u.email for u in auth_users}
 
-    cutoff_new    = now - timedelta(hours=25)   # "first seen" within last 25h = new today
-    cutoff_24h    = now + timedelta(hours=24)
-    cutoff_3d     = now + timedelta(days=3)
+    cutoff_new = now - timedelta(hours=25)
+    cutoff_24h = now + timedelta(hours=24)
+    cutoff_3d  = now + timedelta(days=3)
 
     for user_id, niches in user_niches.items():
         email = email_map.get(user_id)
@@ -114,7 +115,7 @@ def run_alerts():
         user_name = profile.get("full_name") or profile.get("company_name") or "there"
         categories = [n["category"] for n in niches]
 
-        # ── Alert 1: New tenders matching niche ──────────────────────────
+        # ── Alert 1: New tenders matching niche ──────────────────────────────
         new_tenders = []
         for category in categories:
             rows = supabase.table("tenders").select("*") \
@@ -123,7 +124,6 @@ def run_alerts():
                 .gte("first_seen_at", cutoff_new.isoformat()) \
                 .execute().data
             for r in rows:
-                # Check not already alerted
                 existing = supabase.table("alert_log") \
                     .select("id").eq("user_id", user_id) \
                     .eq("tender_id", r["tender_id"]).eq("alert_type", "new_match") \
@@ -139,7 +139,7 @@ def run_alerts():
             content = f"""
             <p style="color:#94a3b8;margin:0 0 16px;">
               <strong style="color:#10b981;">{len(new_tenders)} new tender{'s' if len(new_tenders)>1 else ''}</strong>
-              matching your niche{'s' if len(categories)>1 else ''} 
+              matching your niche{'s' if len(categories)>1 else ''}
               (<strong style="color:#93c5fd;">{', '.join(categories)}</strong>) appeared today:
             </p>
             <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #1e2d45;border-radius:10px;overflow:hidden;">
@@ -152,12 +152,12 @@ def run_alerts():
               {rows_html}
             </table>"""
             try:
-                send_email(email, f"🚨 {len(new_tenders)} New EPADS Tender{'s' if len(new_tenders)>1 else ''} Match Your Niche", email_wrapper(user_name, content))
-                print(f"  ✉️  New match alert sent to {email} ({len(new_tenders)} tenders)")
+                send_email(email, f"🚨 {len(new_tenders)} New Tender{'s' if len(new_tenders)>1 else ''} Match Your Niche — BIDORA", email_wrapper(user_name, content))
+                print(f"  ✉️  New match alert → {email} ({len(new_tenders)} tenders)")
             except Exception as e:
-                print(f"  ❌ Failed to send to {email}: {e}")
+                print(f"  ❌ Failed: {email}: {e}")
 
-        # ── Alert 2: Saved tenders closing soon ──────────────────────────
+        # ── Alert 2: Saved tenders closing soon ──────────────────────────────
         saved = supabase.table("saved_tenders").select("tender_id").eq("user_id", user_id).execute().data
         saved_ids = [s["tender_id"] for s in saved]
 
@@ -182,7 +182,7 @@ def run_alerts():
                     if not existing:
                         content = f"""
                         <p style="color:#94a3b8;margin:0 0 16px;">
-                          A tender you saved is <strong style="color:#f59e0b;">{label.lower()}</strong>:
+                          A tender you saved on BIDORA is <strong style="color:#f59e0b;">{label.lower()}</strong>:
                         </p>
                         <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #1e2d45;border-radius:10px;overflow:hidden;">
                           <tr style="background:#1a2236;">{tender_row_html(t)}</tr>
@@ -191,15 +191,15 @@ def run_alerts():
                           Don't miss this opportunity — submit your bid before the deadline.
                         </p>"""
                         try:
-                            send_email(email, f"{label} — {t.get('title','')[:60]}", email_wrapper(user_name, content))
+                            send_email(email, f"{label} — {t.get('title','')[:60]} | BIDORA", email_wrapper(user_name, content))
                             supabase.table("alert_log").insert({
                                 "user_id": user_id, "tender_id": tid, "alert_type": alert_type
                             }).execute()
-                            print(f"  ✉️  {alert_type} alert sent to {email} for {tid}")
+                            print(f"  ✉️  {alert_type} → {email} for {tid}")
                         except Exception as e:
                             print(f"  ❌ Failed: {e}")
 
-    print("✅ Alert sending complete.")
+    print("✅ BIDORA alert sending complete.")
 
 if __name__ == "__main__":
     run_alerts()
