@@ -9,6 +9,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 
+
+load_dotenv('.env')
+
 # --- CONFIGURATION ---
 load_dotenv()
 EPADS_EMAIL = os.getenv("EPADS_EMAIL")
@@ -23,14 +26,19 @@ FIELDNAMES = [
 
 def scrape_federal():
     options = Options()
-    options.add_argument("--headless") 
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--window-size=1920,1080")
-    options.binary_location = "/usr/bin/chromium-browser"
+    
+    # AUTOMATIC ENVIRONMENT DETECTION
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        print("Running on GitHub: Enabling Headless Mode")
+        options.add_argument("--headless=new")
+    else:
+        print("Running Locally: Opening visible Chrome window")
 
-    service = Service("/usr/bin/chromedriver")
-    driver = webdriver.Chrome(service=service, options=options)
+    # Let Selenium auto-detect the driver paths based on the OS
+    driver = webdriver.Chrome(options=options)
     wait = WebDriverWait(driver, 20)
 
     try:
